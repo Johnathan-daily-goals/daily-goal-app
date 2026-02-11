@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify, g
-from app.database import Database
-from app import crud
+from backend.app.database import Database
+from backend.app import crud
 
 app = Flask(__name__)
 database = Database()
@@ -28,16 +28,48 @@ def close_db_connection(exception=None):
 def create_project():
     data = request.get_json()
     name = data.get("name")
+    description = data.get("description")  # optional
 
     if not name:
         return jsonify({"error": "Project name required"}), 400
 
-    project_id = crud.create_project(g.db_conn, name)
+    project_id = crud.create_project(g.db_conn, name, description)
 
-    return jsonify({"id": project_id, "name": name}), 201
+    return jsonify({
+        "id": project_id,
+        "name": name,
+        "description": description
+    }), 201
 
 
 @app.route("/projects", methods=["GET"])
 def get_projects():
     projects = crud.get_projects(g.db_conn)
     return jsonify(projects), 200
+
+
+@app.route("/projects/<int:project_id>/goals", methods=["POST"])
+def create_daily_goal(project_id):
+    data = request.get_json()
+    goal_text = data.get("goal_text")
+
+    if not goal_text:
+        return jsonify({"error": "goal_text required"}), 400
+
+    goal_id = crud.create_daily_goal(g.db_conn, project_id, goal_text)
+
+    return jsonify({
+        "id": goal_id,
+        "project_id": project_id,
+        "goal_text": goal_text
+    }), 201
+
+
+@app.route("/projects/<int:project_id>/goals", methods=["GET"])
+def get_daily_goals(project_id):
+    goals = crud.get_daily_goals(g.db_conn, project_id)
+    return jsonify(goals), 200
+
+
+if __name__ == "__main__":
+    app.run(debug=True)

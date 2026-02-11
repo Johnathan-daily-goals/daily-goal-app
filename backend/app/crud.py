@@ -1,33 +1,35 @@
-def create_project(conn, name: str) -> int:
+from psycopg2.extras import RealDictCursor
+
+def create_project(conn, name: str, description: str = None) -> int:
+    """Insert a new project and return its ID."""
     cur = conn.cursor()
-
     cur.execute(
-        "INSERT INTO projects (name) VALUES (%s) RETURNING id;",
-        (name,)
+        """
+        INSERT INTO projects (name, description)
+        VALUES (%s, %s)
+        RETURNING id;
+        """,
+        (name, description)
     )
-
     project_id = cur.fetchone()["id"]
     cur.close()
-
     return project_id
 
 
 def get_projects(conn):
-    cur = conn.cursor()
-
+    """Return all projects."""
+    cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute(
-        "SELECT id, name, date_created FROM projects;"
+        "SELECT id, name, description, created_at FROM projects;"
     )
-
     projects = cur.fetchall()
     cur.close()
-
     return projects
 
 
 def create_daily_goal(conn, project_id: int, goal_text: str) -> int:
+    """Insert a new daily goal and return its ID."""
     cur = conn.cursor()
-
     cur.execute(
         """
         INSERT INTO daily_goals (project_id, goal_text)
@@ -36,26 +38,22 @@ def create_daily_goal(conn, project_id: int, goal_text: str) -> int:
         """,
         (project_id, goal_text)
     )
-
     goal_id = cur.fetchone()["id"]
     cur.close()
-
     return goal_id
 
 
 def get_daily_goals(conn, project_id: int):
-    cur = conn.cursor()
-
+    """Return all daily goals for a given project."""
+    cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute(
         """
-        SELECT id, goal_text, date_created
+        SELECT id, goal_text, created_at
         FROM daily_goals
         WHERE project_id = %s;
         """,
         (project_id,)
     )
-
     goals = cur.fetchall()
     cur.close()
-
     return goals
