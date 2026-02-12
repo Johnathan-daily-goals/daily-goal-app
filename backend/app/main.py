@@ -1,8 +1,10 @@
 from flask import Flask, request, jsonify, g
 from backend.app.database import Database
 from backend.app import crud
-from backend.app.errors import AppError, Unauthorized
+from backend.app.errors import AppError, Unauthorized, BadRequest
 from datetime import datetime, timezone
+from uuid import uuid4
+
 
 app = Flask(__name__)
 database = Database()
@@ -27,7 +29,7 @@ def open_db_connection():
 
 @app.before_request
 def authenticate_request():
-    if request.path == "/health":
+    if request.path in ("/health", "/auth/register", "/auth/login"):
         return
 
     auth_header = request.headers.get("Authorization", "")
@@ -194,6 +196,61 @@ def upsert_today_goal(project_id):
     status_code = 201 if row["inserted"] else 200
     row.pop("inserted", None)
     return jsonify(row), status_code
+
+
+@app.route("/auth/register", methods=["POST"])
+def register():
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+
+    if not email or not password:
+        return jsonify({"error": "email and password required"}), 400
+
+    existing = crud.get_user_by_email(g.db_conn, email)
+    if existing:
+        return jsonify({"error": "Email already registered"}), 409
+
+    user = crud.create_user(g.db_conn, email, password)
+    return jsonify(user), 201
+
+
+@app.route("/auth/login", methods=["POST"])
+def login():
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+
+    if not email or not password:
+        return jsonify({"error": "email and password required"}), 400
+
+    user = crud.verify_user_password(g.db_conn, email, password)
+    if not user:
+        return jsonify({"error": "Invalid email or password"}), 401
+
+    refresh = crud.create_refresh_token(g.db_conn, user["id"])
+
+    return jsonify({
+        "id": user["id"],
+        "email": user["email"],
+        "token": user["token"],
+        "refresh_token": refresh["token"],
+    }), 200
+
+
+@app.route("/auth/logout", methods=["POST"])
+def logout():
+    data = request.get_json(silent=True) or {}
+    refresh_token = data.get("refresh_token")
+
+    if not refresh_token:
+        return jsonify({"error": "refresh_token required"}), 400
+
+    revoked = crud.revoke_refresh_token(g.db_conn, g.user_id, refresh_token)
+    if not revoked:
+        return jsonify({"error": "Refresh token not found or already revoked"}), 404
+
+    return jsonify({"status": "logged_out"}), 200
 
 
 if __name__ == "__main__":
