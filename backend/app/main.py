@@ -1,9 +1,8 @@
 from flask import Flask, request, jsonify, g
 from backend.app.database import Database
 from backend.app import crud
-from backend.app.errors import AppError
+from backend.app.errors import AppError, Unauthorized
 from datetime import datetime, timezone
-
 
 app = Flask(__name__)
 database = Database()
@@ -21,13 +20,31 @@ def to_iso(dt):
     return str(dt)
 
 
-# Open connection before each request
 @app.before_request
 def open_db_connection():
     g.db_conn = database.get_connection()
 
 
-# Close connection after each request
+@app.before_request
+def authenticate_request():
+    if request.path == "/health":
+        return
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise Unauthorized("Missing or invalid Authorization header")
+
+    token = auth_header.removeprefix("Bearer ").strip()
+    if not token:
+        raise Unauthorized("Missing or invalid Authorization header")
+
+    user = crud.get_user_by_token(g.db_conn, token)
+    if not user:
+        raise Unauthorized("Invalid token")
+
+    g.user_id = user["id"]
+
+
 @app.teardown_request
 def close_db_connection(exception=None):
     conn = getattr(g, "db_conn", None)
@@ -38,20 +55,22 @@ def close_db_connection(exception=None):
             conn.commit()
         conn.close()
 
+
 @app.errorhandler(AppError)
 def handle_app_error(err: AppError):
     return jsonify({"error": err.detail}), err.status_code
+
 
 @app.route("/projects", methods=["POST"])
 def create_project():
     data = request.get_json()
     name = data.get("name")
-    description = data.get("description")  # optional
+    description = data.get("description")
 
     if not name:
         return jsonify({"error": "Project name required"}), 400
 
-    project_id = crud.create_project(g.db_conn, name, description)
+    project_id = crud.create_project(g.db_conn, g.user_id, name, description)
 
     return jsonify({
         "id": project_id,
@@ -62,13 +81,13 @@ def create_project():
 
 @app.route("/projects", methods=["GET"])
 def get_projects():
-    projects = crud.get_projects(g.db_conn)
+    projects = crud.get_projects(g.db_conn, g.user_id)
     return jsonify(projects), 200
 
 
 @app.route("/projects/<int:project_id>/goals", methods=["POST"])
 def create_daily_goal(project_id):
-    project = crud.get_project(g.db_conn, project_id)
+    project = crud.get_project(g.db_conn, project_id, g.user_id)
     if not project:
         return jsonify({"error": "Project not found"}), 404
 
@@ -78,7 +97,7 @@ def create_daily_goal(project_id):
     if not goal_text:
         return jsonify({"error": "goal_text required"}), 400
 
-    goal_id = crud.create_daily_goal(g.db_conn, project_id, goal_text)
+    goal_id = crud.create_daily_goal(g.db_conn, project_id, g.user_id, goal_text)
 
     return jsonify({
         "id": goal_id,
@@ -89,41 +108,45 @@ def create_daily_goal(project_id):
 
 @app.route("/projects/<int:project_id>/goals", methods=["GET"])
 def get_daily_goals(project_id):
-    if not crud.project_exists(g.db_conn, project_id):
+    if not crud.project_exists(g.db_conn, project_id, g.user_id):
         return jsonify({"error": "Project not found"}), 404
 
-    goals = crud.get_daily_goals(g.db_conn, project_id)
+    goals = crud.get_daily_goals(g.db_conn, project_id, g.user_id)
     return jsonify(goals), 200
+
 
 @app.route("/projects/<int:project_id>/archive", methods=["POST"])
 def archive_project(project_id):
-    if not crud.project_exists(g.db_conn, project_id):
+    if not crud.project_exists(g.db_conn, project_id, g.user_id):
         return jsonify({"error": "Project not found"}), 404
 
-    archived = crud.archive_project(g.db_conn, project_id)
+    archived = crud.archive_project(g.db_conn, project_id, g.user_id)
     if not archived:
         return jsonify({"error": "Project already archived"}), 409
 
     return jsonify({"status": "archived", "project_id": project_id}), 200
 
+
 @app.route("/projects/archived", methods=["GET"])
 def get_archived_projects():
-    projects = crud.get_archived_projects(g.db_conn)
+    projects = crud.get_archived_projects(g.db_conn, g.user_id)
     return jsonify(projects), 200
+
 
 @app.route("/projects/<int:project_id>", methods=["GET"])
 def get_project(project_id: int):
-    project = crud.get_project(g.db_conn, project_id)
+    project = crud.get_project(g.db_conn, project_id, g.user_id)
     if not project:
         return jsonify({"error": "Project not found"}), 404
     return jsonify(project), 200
 
+
 @app.route("/projects/<int:project_id>", methods=["DELETE"])
 def delete_project(project_id: int):
-    if not crud.project_exists(g.db_conn, project_id):
+    if not crud.project_exists(g.db_conn, project_id, g.user_id):
         return jsonify({"error": "Project not found"}), 404
 
-    archived = crud.archive_project(g.db_conn, project_id)
+    archived = crud.archive_project(g.db_conn, project_id, g.user_id)
     if not archived:
         return jsonify({"error": "Project already archived"}), 409
 
@@ -132,10 +155,10 @@ def delete_project(project_id: int):
 
 @app.route("/projects/<int:project_id>/restore", methods=["POST"])
 def restore_project(project_id: int):
-    if not crud.project_exists(g.db_conn, project_id):
+    if not crud.project_exists(g.db_conn, project_id, g.user_id):
         return jsonify({"error": "Project not found"}), 404
 
-    restored = crud.restore_project(g.db_conn, project_id)
+    restored = crud.restore_project(g.db_conn, project_id, g.user_id)
     if not restored:
         return jsonify({"error": "Project is not archived"}), 409
 
@@ -144,10 +167,10 @@ def restore_project(project_id: int):
 
 @app.route("/projects/<int:project_id>/goals/today", methods=["GET"])
 def get_todays_goal(project_id: int):
-    if not crud.project_exists(g.db_conn, project_id):
+    if not crud.project_exists(g.db_conn, project_id, g.user_id):
         return jsonify({"error": "Project not found"}), 404
 
-    goal = crud.get_todays_goal(g.db_conn, project_id)
+    goal = crud.get_todays_goal(g.db_conn, project_id, g.user_id)
     if not goal:
         return jsonify({"error": "No goal set for today"}), 404
 
@@ -157,7 +180,7 @@ def get_todays_goal(project_id: int):
 
 @app.route("/projects/<int:project_id>/goals/today", methods=["PUT"])
 def upsert_today_goal(project_id):
-    if not crud.project_exists(g.db_conn, project_id):
+    if not crud.project_exists(g.db_conn, project_id, g.user_id):
         return jsonify({"error": "Project not found"}), 404
 
     data = request.get_json()
@@ -166,7 +189,7 @@ def upsert_today_goal(project_id):
     if not goal_text:
         return jsonify({"error": "goal_text required"}), 400
 
-    row = crud.upsert_daily_goal_today(g.db_conn, project_id, goal_text)
+    row = crud.upsert_daily_goal_today(g.db_conn, project_id, g.user_id, goal_text)
 
     status_code = 201 if row["inserted"] else 200
     row.pop("inserted", None)
@@ -175,4 +198,3 @@ def upsert_today_goal(project_id):
 
 if __name__ == "__main__":
     app.run(debug=True)
-
