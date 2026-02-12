@@ -153,3 +153,23 @@ def get_todays_goal(conn, project_id: int):
     goal = cur.fetchone()
     cur.close()
     return goal
+
+def upsert_daily_goal_today(conn, project_id: int, goal_text: str) -> dict:
+    """
+    Create today's goal if none exists, otherwise update today's goal_text.
+    Returns a dict with: id, project_id, goal_text, created_at, inserted (bool)
+    """
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        """
+        INSERT INTO daily_goals (project_id, goal_text)
+        VALUES (%s, %s)
+        ON CONFLICT (project_id, (date(created_at)))
+        DO UPDATE SET goal_text = EXCLUDED.goal_text
+        RETURNING id, project_id, goal_text, created_at, (xmax = 0) AS inserted;
+        """,
+        (project_id, goal_text),
+    )
+    row = cur.fetchone()
+    cur.close()
+    return row

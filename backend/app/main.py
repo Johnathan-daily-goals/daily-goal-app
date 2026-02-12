@@ -2,9 +2,23 @@ from flask import Flask, request, jsonify, g
 from backend.app.database import Database
 from backend.app import crud
 from backend.app.errors import AppError
+from datetime import datetime, timezone
+
 
 app = Flask(__name__)
 database = Database()
+
+
+def to_iso(dt):
+    if dt is None:
+        return None
+    if isinstance(dt, str):
+        return dt
+    if isinstance(dt, datetime):
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat().replace("+00:00", "Z")
+    return str(dt)
 
 
 # Open connection before each request
@@ -140,18 +154,23 @@ def get_todays_goal(project_id: int):
     goal["created_at"] = to_iso(goal.get("created_at"))
     return jsonify(goal), 200
 
-from datetime import datetime, timezone
 
-def to_iso(dt):
-    if dt is None:
-        return None
-    if isinstance(dt, str):
-        return dt
-    if isinstance(dt, datetime):
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.isoformat().replace("+00:00", "Z")
-    return str(dt)
+@app.route("/projects/<int:project_id>/goals/today", methods=["PUT"])
+def upsert_today_goal(project_id):
+    if not crud.project_exists(g.db_conn, project_id):
+        return jsonify({"error": "Project not found"}), 404
+
+    data = request.get_json()
+    goal_text = data.get("goal_text")
+
+    if not goal_text:
+        return jsonify({"error": "goal_text required"}), 400
+
+    row = crud.upsert_daily_goal_today(g.db_conn, project_id, goal_text)
+
+    status_code = 201 if row["inserted"] else 200
+    row.pop("inserted", None)
+    return jsonify(row), status_code
 
 
 if __name__ == "__main__":
