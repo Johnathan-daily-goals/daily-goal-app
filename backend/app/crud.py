@@ -1,4 +1,7 @@
 from psycopg2.extras import RealDictCursor
+from psycopg2 import errors as pg_errors
+from backend.app.errors import DailyGoalAlreadyExists
+
 
 def create_project(conn, name: str, description: str = None) -> int:
     """Insert a new project and return its ID."""
@@ -30,18 +33,23 @@ def get_projects(conn):
 def create_daily_goal(conn, project_id: int, goal_text: str) -> int:
     """Insert a new daily goal and return its ID."""
     cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO daily_goals (project_id, goal_text)
-        VALUES (%s, %s)
-        RETURNING id;
-        """,
-        (project_id, goal_text)
-    )
-    goal_id = cur.fetchone()["id"]
-    cur.close()
-    return goal_id
 
+    try:
+        cur.execute(
+            """
+            INSERT INTO daily_goals (project_id, goal_text)
+            VALUES (%s, %s)
+            RETURNING id;
+            """,
+            (project_id, goal_text),
+        )
+        return cur.fetchone()["id"]
+
+    except pg_errors.UniqueViolation as e:
+        raise DailyGoalAlreadyExists() from e
+
+    finally:
+        cur.close()
 
 def get_daily_goals(conn, project_id: int):
     """Return all daily goals for a given project."""
