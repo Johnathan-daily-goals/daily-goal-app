@@ -10,3 +10,7 @@ class AppError(Exception):
 class DailyGoalAlreadyExists(AppError):
     status_code = 409
     message = "Only one daily goal per project per day"
+
+class ProjectNotFound(AppError):
+    status_code = 404
+    message = "Project not found"
