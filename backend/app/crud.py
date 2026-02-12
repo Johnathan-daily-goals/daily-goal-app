@@ -65,3 +65,18 @@ def get_daily_goals(conn, project_id: int):
     goals = cur.fetchall()
     cur.close()
     return goals
+
+def get_project(conn, project_id: int):
+    """Return a single project dict, or None if not found."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, name, description, created_at
+        FROM projects
+        WHERE id = %s;
+        """,
+        (project_id,),
+    )
+    project = cur.fetchone()
+    cur.close()
+    return project

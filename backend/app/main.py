@@ -1,8 +1,7 @@
 from flask import Flask, request, jsonify, g
 from backend.app.database import Database
 from backend.app import crud
-from psycopg2 import errors
-
+from backend.app.errors import AppError
 
 app = Flask(__name__)
 database = Database()
@@ -25,6 +24,9 @@ def close_db_connection(exception=None):
             conn.commit()
         conn.close()
 
+@app.errorhandler(AppError)
+def handle_app_error(err: AppError):
+    return jsonify({"error": err.detail}), err.status_code
 
 @app.route("/projects", methods=["POST"])
 def create_project():
@@ -52,17 +54,17 @@ def get_projects():
 
 @app.route("/projects/<int:project_id>/goals", methods=["POST"])
 def create_daily_goal(project_id):
+    project = crud.get_project(g.db_conn, project_id)
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+
     data = request.get_json()
     goal_text = data.get("goal_text")
 
     if not goal_text:
         return jsonify({"error": "goal_text required"}), 400
 
-    try:
-        goal_id = crud.create_daily_goal(g.db_conn, project_id, goal_text)
-    except errors.UniqueViolation:
-        # Teardown will rollback because an exception occurred
-        return jsonify({"error": "Only one daily goal per project per day"}), 409
+    goal_id = crud.create_daily_goal(g.db_conn, project_id, goal_text)
 
     return jsonify({
         "id": goal_id,
@@ -73,6 +75,10 @@ def create_daily_goal(project_id):
 
 @app.route("/projects/<int:project_id>/goals", methods=["GET"])
 def get_daily_goals(project_id):
+    project = crud.get_project(g.db_conn, project_id)
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+
     goals = crud.get_daily_goals(g.db_conn, project_id)
     return jsonify(goals), 200
 
