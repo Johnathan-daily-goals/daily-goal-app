@@ -1,6 +1,8 @@
 from flask import Flask, request, jsonify, g
 from backend.app.database import Database
 from backend.app import crud
+from psycopg2 import errors
+
 
 app = Flask(__name__)
 database = Database()
@@ -56,7 +58,11 @@ def create_daily_goal(project_id):
     if not goal_text:
         return jsonify({"error": "goal_text required"}), 400
 
-    goal_id = crud.create_daily_goal(g.db_conn, project_id, goal_text)
+    try:
+        goal_id = crud.create_daily_goal(g.db_conn, project_id, goal_text)
+    except errors.UniqueViolation:
+        # Teardown will rollback because an exception occurred
+        return jsonify({"error": "Only one daily goal per project per day"}), 409
 
     return jsonify({
         "id": goal_id,
@@ -73,3 +79,4 @@ def get_daily_goals(project_id):
 
 if __name__ == "__main__":
     app.run(debug=True)
+
