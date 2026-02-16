@@ -1,0 +1,7 @@
+BEGIN;
+
+ALTER TABLE users
+    DROP COLUMN IF EXISTS token_expires_at,
+    DROP COLUMN IF EXISTS token;
+
+COMMIT;
