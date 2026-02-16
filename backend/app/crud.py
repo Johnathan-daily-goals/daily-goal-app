@@ -1,18 +1,10 @@
+import uuid
 from psycopg2.extras import RealDictCursor
 from psycopg2 import errors as pg_errors
 from backend.app.errors import DailyGoalAlreadyExists, ProjectNotFound
-
-
-def get_user_by_token(conn, token: str):
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute(
-        "SELECT id, email FROM users WHERE token = %s;",
-        (token,),
-    )
-    row = cur.fetchone()
-    cur.close()
-    return row
-
+from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime, timedelta, timezone
+import secrets
 
 def create_project(conn, user_id: int, name: str, description: str = None) -> int:
     cur = conn.cursor()
@@ -183,7 +175,7 @@ def upsert_daily_goal_today(conn, project_id: int, user_id: int, goal_text: str)
         """
         INSERT INTO daily_goals (project_id, user_id, goal_text)
         VALUES (%s, %s, %s)
-        ON CONFLICT (project_id, (date(created_at)))
+        ON CONFLICT (user_id, project_id, (date(created_at)))
         DO UPDATE SET goal_text = EXCLUDED.goal_text
         RETURNING id, project_id, user_id, goal_text, created_at, (xmax = 0) AS inserted;
         """,
@@ -192,3 +184,242 @@ def upsert_daily_goal_today(conn, project_id: int, user_id: int, goal_text: str)
     row = cur.fetchone()
     cur.close()
     return row
+
+def get_user_by_email(conn, email: str):
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        "SELECT id, email, password_hash, token FROM users WHERE email = %s;",
+        (email,),
+    )
+    row = cur.fetchone()
+    cur.close()
+    return row
+
+
+def create_user(conn, email: str, password: str) -> dict:
+    password_hash = generate_password_hash(password)
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        """
+        INSERT INTO users (email, password_hash, token)
+        VALUES (%s, %s, gen_random_uuid()::text)
+        RETURNING id, email, token;
+        """,
+        (email, password_hash),
+    )
+    row = cur.fetchone()
+    cur.close()
+    return row
+
+
+def verify_user_password(conn, email: str, password: str) -> dict | None:
+    user = get_user_by_email(conn, email)
+    if not user:
+        return None
+    if not user["password_hash"]:
+        return None
+    if not check_password_hash(user["password_hash"], password):
+        return None
+    return user
+
+def create_refresh_token(conn, user_id: int, ttl_seconds: int = 60 * 60 * 24 * 30) -> dict:
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(seconds=ttl_seconds)
+
+    token = secrets.token_urlsafe(32)
+
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        """
+        INSERT INTO refresh_tokens (user_id, token, expires_at)
+        VALUES (%s, %s, %s)
+        RETURNING id, user_id, token, created_at, expires_at, revoked_at;
+        """,
+        (user_id, token, expires_at),
+    )
+    row = cur.fetchone()
+    cur.close()
+    return row
+
+
+def get_valid_refresh_token(conn, token: str) -> dict | None:
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        """
+        SELECT id, user_id, token, created_at, expires_at, revoked_at
+        FROM refresh_tokens
+        WHERE token = %s
+          AND revoked_at IS NULL
+          AND expires_at > CURRENT_TIMESTAMP;
+        """,
+        (token,),
+    )
+    row = cur.fetchone()
+    cur.close()
+    return row
+
+def use_refresh_token(conn, token: str):
+    """
+    Validate refresh token, revoke it, and issue a new refresh token.
+    Returns dict: user_id, refresh_token, expires_at
+    """
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    cur.execute(
+        """
+        SELECT id, user_id, expires_at, revoked_at
+        FROM refresh_tokens
+        WHERE token = %s;
+        """,
+        (token,),
+    )
+    refresh_row = cur.fetchone()
+    if not refresh_row:
+        cur.close()
+        return None
+
+    cur.execute(
+    """
+    SELECT id, user_id
+    FROM refresh_tokens
+    WHERE token = %s
+      AND revoked_at IS NULL
+      AND expires_at > CURRENT_TIMESTAMP;
+    """,
+    (token,),)
+    refresh_row = cur.fetchone()
+    if not refresh_row:
+        cur.close()
+        return None
+
+    cur.execute(
+        """
+        UPDATE refresh_tokens
+        SET revoked_at = CURRENT_TIMESTAMP
+        WHERE id = %s AND revoked_at IS NULL
+        RETURNING id;
+        """,
+        (refresh_row["id"],),
+    )
+    if not cur.fetchone():
+        cur.close()
+        return None
+
+    new_refresh_token = secrets.token_urlsafe(32)
+    new_expires_at = now + timedelta(days=30)
+
+    cur.execute(
+        """
+        INSERT INTO refresh_tokens (user_id, token, expires_at)
+        VALUES (%s, %s, %s);
+        """,
+        (refresh_row["user_id"], new_refresh_token, new_expires_at),
+    )
+
+    cur.close()
+    return {
+        "user_id": refresh_row["user_id"],
+        "refresh_token": new_refresh_token,
+        "expires_at": new_expires_at.isoformat(),
+    }
+
+def revoke_refresh_token(conn, user_id: int, token: str) -> bool:
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE refresh_tokens
+        SET revoked_at = CURRENT_TIMESTAMP
+        WHERE token = %s
+          AND user_id = %s
+          AND revoked_at IS NULL
+        RETURNING id;
+        """,
+        (token, user_id),
+    )
+    revoked = cur.fetchone() is not None
+    cur.close()
+    return revoked
+
+
+def revoke_refresh_token_by_token(conn, token: str) -> bool:
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE refresh_tokens
+        SET revoked_at = CURRENT_TIMESTAMP
+        WHERE token = %s
+          AND revoked_at IS NULL
+        RETURNING id;
+        """,
+        (token,),
+    )
+    revoked = cur.fetchone() is not None
+    cur.close()
+    return revoked
+
+def create_access_token(conn, user_id: int, ttl_seconds: int) -> dict:
+    access_token_value = secrets.token_urlsafe(32)
+
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        """
+        INSERT INTO access_tokens (user_id, token, expires_at)
+        VALUES (%s, %s, CURRENT_TIMESTAMP + (%s * INTERVAL '1 second'))
+        RETURNING id, user_id, token, created_at, expires_at, revoked_at;
+        """,
+        (user_id, access_token_value, ttl_seconds),
+    )
+    row = cur.fetchone()
+    cur.close()
+    return row
+
+
+def get_valid_access_token(conn, access_token_value: str) -> dict | None:
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        """
+        SELECT id, user_id, token, expires_at, revoked_at
+        FROM access_tokens
+        WHERE token = %s
+          AND revoked_at IS NULL
+          AND expires_at > CURRENT_TIMESTAMP;
+        """,
+        (access_token_value,),
+    )
+    row = cur.fetchone()
+    cur.close()
+    return row
+
+
+def revoke_access_token(conn, access_token_value: str) -> bool:
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        UPDATE access_tokens
+        SET revoked_at = CURRENT_TIMESTAMP
+        WHERE token = %s
+          AND revoked_at IS NULL
+        RETURNING id;
+        """,
+        (access_token_value,),
+    )
+    was_revoked = cursor.fetchone() is not None
+    cursor.close()
+    return was_revoked
+
+
+def revoke_access_token_by_token(conn, token: str) -> bool:
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        UPDATE access_tokens
+        SET revoked_at = CURRENT_TIMESTAMP
+        WHERE token = %s
+          AND revoked_at IS NULL
+        RETURNING id;
+        """,
+        (token,),
+    )
+    was_revoked = cursor.fetchone() is not None
+    cursor.close()
+    return was_revoked
