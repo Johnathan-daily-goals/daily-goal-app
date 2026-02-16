@@ -18,3 +18,7 @@ class ProjectNotFound(AppError):
 class Unauthorized(AppError):
     status_code = 401
     message = "Unauthorized"
+
+class BadRequest(AppError):
+    status_code = 400
+    message = "Bad request"

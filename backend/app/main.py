@@ -1,10 +1,19 @@
 from flask import Flask, request, jsonify, g
 from backend.app.database import Database
 from backend.app import crud
-from backend.app.errors import AppError, Unauthorized
+from backend.app.errors import AppError, Unauthorized, BadRequest
 from datetime import datetime, timezone
+from uuid import uuid4
+import os
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from backend.app.routes.auth import blueprint as auth_blueprint
+
 
 app = Flask(__name__)
+app.config["ACCESS_TOKEN_SECRET"] = os.getenv("ACCESS_TOKEN_SECRET", "dev-only-change-me")
+app.config["ACCESS_TOKEN_TTL_SECONDS"] = int(os.getenv("ACCESS_TOKEN_TTL_SECONDS", "900"))
+
+app.register_blueprint(auth_blueprint)
 database = Database()
 
 
@@ -24,26 +33,29 @@ def to_iso(dt):
 def open_db_connection():
     g.db_conn = database.get_connection()
 
+from datetime import datetime, timezone
+from flask import request, g
+from backend.app.errors import Unauthorized
+from backend.app import crud
 
 @app.before_request
 def authenticate_request():
-    if request.path == "/health":
+    if request.path == "/health" or request.path.startswith("/auth/"):
         return
 
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
+    authorization_header = request.headers.get("Authorization", "")
+    if not authorization_header.startswith("Bearer "):
         raise Unauthorized("Missing or invalid Authorization header")
 
-    token = auth_header.removeprefix("Bearer ").strip()
-    if not token:
+    access_token_value = authorization_header.removeprefix("Bearer ").strip()
+    if not access_token_value:
         raise Unauthorized("Missing or invalid Authorization header")
 
-    user = crud.get_user_by_token(g.db_conn, token)
-    if not user:
-        raise Unauthorized("Invalid token")
+    token_row = crud.get_valid_access_token(g.db_conn, access_token_value)
+    if not token_row:
+        raise Unauthorized("Invalid or expired token")
 
-    g.user_id = user["id"]
-
+    g.user_id = token_row["user_id"]
 
 @app.teardown_request
 def close_db_connection(exception=None):
@@ -195,6 +207,5 @@ def upsert_today_goal(project_id):
     row.pop("inserted", None)
     return jsonify(row), status_code
 
-
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=False)
