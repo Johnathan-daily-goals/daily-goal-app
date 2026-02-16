@@ -32,7 +32,6 @@ def to_iso(dt):
 @app.before_request
 def open_db_connection():
     g.db_conn = database.get_connection()
-    print("OPEN id:", id(g.db_conn), "closed:", g.db_conn.closed)
 
 from datetime import datetime, timezone
 from flask import request, g
@@ -61,7 +60,6 @@ def authenticate_request():
 @app.teardown_request
 def close_db_connection(exception=None):
     conn = getattr(g, "db_conn", None)
-    print("TEARDOWN id:", id(conn), "closed:", conn.closed)
     if conn:
         if exception:
             conn.rollback()
