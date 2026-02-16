@@ -188,7 +188,7 @@ def upsert_daily_goal_today(conn, project_id: int, user_id: int, goal_text: str)
 def get_user_by_email(conn, email: str):
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute(
-        "SELECT id, email, password_hash, token FROM users WHERE email = %s;",
+        "SELECT id, email, password_hash FROM users WHERE email = %s;",
         (email,),
     )
     row = cur.fetchone()
@@ -201,9 +201,9 @@ def create_user(conn, email: str, password: str) -> dict:
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute(
         """
-        INSERT INTO users (email, password_hash, token)
-        VALUES (%s, %s, gen_random_uuid()::text)
-        RETURNING id, email, token;
+        INSERT INTO users (email, password_hash)
+        VALUES (%s, %s)
+        RETURNING id, email;
         """,
         (email, password_hash),
     )
@@ -267,9 +267,11 @@ def use_refresh_token(conn, token: str):
 
     cur.execute(
         """
-        SELECT id, user_id, expires_at, revoked_at
+        SELECT id, user_id
         FROM refresh_tokens
-        WHERE token = %s;
+        WHERE token = %s
+          AND revoked_at IS NULL
+          AND expires_at > CURRENT_TIMESTAMP;
         """,
         (token,),
     )
@@ -278,19 +280,7 @@ def use_refresh_token(conn, token: str):
         cur.close()
         return None
 
-    cur.execute(
-    """
-    SELECT id, user_id
-    FROM refresh_tokens
-    WHERE token = %s
-      AND revoked_at IS NULL
-      AND expires_at > CURRENT_TIMESTAMP;
-    """,
-    (token,),)
-    refresh_row = cur.fetchone()
-    if not refresh_row:
-        cur.close()
-        return None
+    now = datetime.now(timezone.utc)
 
     cur.execute(
         """
