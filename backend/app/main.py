@@ -4,9 +4,16 @@ from backend.app import crud
 from backend.app.errors import AppError, Unauthorized, BadRequest
 from datetime import datetime, timezone
 from uuid import uuid4
+import os
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from backend.app.routes.auth import blueprint as auth_blueprint
 
 
 app = Flask(__name__)
+app.config["ACCESS_TOKEN_SECRET"] = os.getenv("ACCESS_TOKEN_SECRET", "dev-only-change-me")
+app.config["ACCESS_TOKEN_TTL_SECONDS"] = int(os.getenv("ACCESS_TOKEN_TTL_SECONDS", "900"))
+
+app.register_blueprint(auth_blueprint)
 database = Database()
 
 
@@ -26,26 +33,29 @@ def to_iso(dt):
 def open_db_connection():
     g.db_conn = database.get_connection()
 
+from datetime import datetime, timezone
+from flask import request, g
+from backend.app.errors import Unauthorized
+from backend.app import crud
 
 @app.before_request
 def authenticate_request():
-    if request.path in ("/health", "/auth/register", "/auth/login"):
+    if request.path == "/health" or request.path.startswith("/auth/"):
         return
 
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
+    authorization_header = request.headers.get("Authorization", "")
+    if not authorization_header.startswith("Bearer "):
         raise Unauthorized("Missing or invalid Authorization header")
 
-    token = auth_header.removeprefix("Bearer ").strip()
-    if not token:
+    access_token_value = authorization_header.removeprefix("Bearer ").strip()
+    if not access_token_value:
         raise Unauthorized("Missing or invalid Authorization header")
 
-    user = crud.get_user_by_token(g.db_conn, token)
-    if not user:
-        raise Unauthorized("Invalid token")
+    token_row = crud.get_valid_access_token(g.db_conn, access_token_value)
+    if not token_row:
+        raise Unauthorized("Invalid or expired token")
 
-    g.user_id = user["id"]
-
+    g.user_id = token_row["user_id"]
 
 @app.teardown_request
 def close_db_connection(exception=None):
@@ -197,61 +207,5 @@ def upsert_today_goal(project_id):
     row.pop("inserted", None)
     return jsonify(row), status_code
 
-
-@app.route("/auth/register", methods=["POST"])
-def register():
-    data = request.get_json() or {}
-    email = (data.get("email") or "").strip().lower()
-    password = data.get("password") or ""
-
-    if not email or not password:
-        return jsonify({"error": "email and password required"}), 400
-
-    existing = crud.get_user_by_email(g.db_conn, email)
-    if existing:
-        return jsonify({"error": "Email already registered"}), 409
-
-    user = crud.create_user(g.db_conn, email, password)
-    return jsonify(user), 201
-
-
-@app.route("/auth/login", methods=["POST"])
-def login():
-    data = request.get_json() or {}
-    email = (data.get("email") or "").strip().lower()
-    password = data.get("password") or ""
-
-    if not email or not password:
-        return jsonify({"error": "email and password required"}), 400
-
-    user = crud.verify_user_password(g.db_conn, email, password)
-    if not user:
-        return jsonify({"error": "Invalid email or password"}), 401
-
-    refresh = crud.create_refresh_token(g.db_conn, user["id"])
-
-    return jsonify({
-        "id": user["id"],
-        "email": user["email"],
-        "token": user["token"],
-        "refresh_token": refresh["token"],
-    }), 200
-
-
-@app.route("/auth/logout", methods=["POST"])
-def logout():
-    data = request.get_json(silent=True) or {}
-    refresh_token = data.get("refresh_token")
-
-    if not refresh_token:
-        return jsonify({"error": "refresh_token required"}), 400
-
-    revoked = crud.revoke_refresh_token(g.db_conn, g.user_id, refresh_token)
-    if not revoked:
-        return jsonify({"error": "Refresh token not found or already revoked"}), 404
-
-    return jsonify({"status": "logged_out"}), 200
-
-
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=False)
