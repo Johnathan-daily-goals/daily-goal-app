@@ -1,17 +1,20 @@
 from flask import Flask, request, jsonify, g
 from backend.app.database import Database
 from backend.app import crud
-from backend.app.errors import AppError, Unauthorized, BadRequest
-from datetime import datetime, timezone
-from uuid import uuid4
+from backend.app.errors import AppError, Unauthorized
 import os
-from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from backend.app.routes.auth import blueprint as auth_blueprint
+from datetime import datetime, timezone
+
 
 
 app = Flask(__name__)
-app.config["ACCESS_TOKEN_SECRET"] = os.getenv("ACCESS_TOKEN_SECRET", "dev-only-change-me")
-app.config["ACCESS_TOKEN_TTL_SECONDS"] = int(os.getenv("ACCESS_TOKEN_TTL_SECONDS", "900"))
+app.config["ACCESS_TOKEN_SECRET"] = os.getenv(
+    "ACCESS_TOKEN_SECRET", "dev-only-change-me"
+)
+app.config["ACCESS_TOKEN_TTL_SECONDS"] = int(
+    os.getenv("ACCESS_TOKEN_TTL_SECONDS", "900")
+)
 
 app.register_blueprint(auth_blueprint)
 database = Database()
@@ -33,10 +36,7 @@ def to_iso(dt):
 def open_db_connection():
     g.db_conn = database.get_connection()
 
-from datetime import datetime, timezone
-from flask import request, g
-from backend.app.errors import Unauthorized
-from backend.app import crud
+
 
 @app.before_request
 def authenticate_request():
@@ -56,6 +56,7 @@ def authenticate_request():
         raise Unauthorized("Invalid or expired token")
 
     g.user_id = token_row["user_id"]
+
 
 @app.teardown_request
 def close_db_connection(exception=None):
@@ -84,11 +85,7 @@ def create_project():
 
     project_id = crud.create_project(g.db_conn, g.user_id, name, description)
 
-    return jsonify({
-        "id": project_id,
-        "name": name,
-        "description": description
-    }), 201
+    return jsonify({"id": project_id, "name": name, "description": description}), 201
 
 
 @app.route("/projects", methods=["GET"])
@@ -111,11 +108,9 @@ def create_daily_goal(project_id):
 
     goal_id = crud.create_daily_goal(g.db_conn, project_id, g.user_id, goal_text)
 
-    return jsonify({
-        "id": goal_id,
-        "project_id": project_id,
-        "goal_text": goal_text
-    }), 201
+    return jsonify(
+        {"id": goal_id, "project_id": project_id, "goal_text": goal_text}
+    ), 201
 
 
 @app.route("/projects/<int:project_id>/goals", methods=["GET"])
@@ -206,6 +201,7 @@ def upsert_today_goal(project_id):
     status_code = 201 if row["inserted"] else 200
     row.pop("inserted", None)
     return jsonify(row), status_code
+
 
 if __name__ == "__main__":
     app.run(debug=False)

@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, g, current_app
-from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from itsdangerous import URLSafeTimedSerializer
 
 from backend.app import crud
 
@@ -49,15 +49,19 @@ def login():
     access_token_row = crud.create_access_token(
         g.db_conn,
         user["id"],
-        ttl_seconds=current_app.config["ACCESS_TOKEN_TTL_SECONDS"],)
+        ttl_seconds=current_app.config["ACCESS_TOKEN_TTL_SECONDS"],
+    )
     refresh_token_row = crud.create_refresh_token(g.db_conn, user["id"])
-    return jsonify({
-    "id": user["id"],
-    "email": user["email"],
-    "access_token": access_token_row["token"],
-    "refresh_token": refresh_token_row["token"],
-    "expires_in": current_app.config["ACCESS_TOKEN_TTL_SECONDS"],
-    }), 200
+    return jsonify(
+        {
+            "id": user["id"],
+            "email": user["email"],
+            "access_token": access_token_row["token"],
+            "refresh_token": refresh_token_row["token"],
+            "expires_in": current_app.config["ACCESS_TOKEN_TTL_SECONDS"],
+        }
+    ), 200
+
 
 @blueprint.route("/refresh", methods=["POST"])
 def refresh():
@@ -76,11 +80,13 @@ def refresh():
         refresh_result["user_id"],
         ttl_seconds=current_app.config["ACCESS_TOKEN_TTL_SECONDS"],
     )
-    return jsonify({
-    "access_token": access_token_row["token"],
-    "refresh_token": refresh_result["refresh_token"],
-    "expires_at": refresh_result["expires_at"],
-    }), 200
+    return jsonify(
+        {
+            "access_token": access_token_row["token"],
+            "refresh_token": refresh_result["refresh_token"],
+            "expires_at": refresh_result["expires_at"],
+        }
+    ), 200
 
 
 @blueprint.route("/logout", methods=["POST"])
@@ -109,8 +115,10 @@ def logout():
         )
 
     # Don't fail logout if tokens are already expired/revoked/missing in DB.
-    return jsonify({
-        "status": "logged_out",
-        "refresh_token_revoked": refresh_was_revoked,
-        "access_token_revoked": access_was_revoked,
-    }), 200
+    return jsonify(
+        {
+            "status": "logged_out",
+            "refresh_token_revoked": refresh_was_revoked,
+            "access_token_revoked": access_was_revoked,
+        }
+    ), 200

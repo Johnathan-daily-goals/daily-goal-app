@@ -1,10 +1,10 @@
-import uuid
 from psycopg2.extras import RealDictCursor
 from psycopg2 import errors as pg_errors
 from backend.app.errors import DailyGoalAlreadyExists, ProjectNotFound
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta, timezone
 import secrets
+
 
 def create_project(conn, user_id: int, name: str, description: str = None) -> int:
     cur = conn.cursor()
@@ -169,7 +169,9 @@ def get_todays_goal(conn, project_id: int, user_id: int):
     return goal
 
 
-def upsert_daily_goal_today(conn, project_id: int, user_id: int, goal_text: str) -> dict:
+def upsert_daily_goal_today(
+    conn, project_id: int, user_id: int, goal_text: str
+) -> dict:
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute(
         """
@@ -184,6 +186,7 @@ def upsert_daily_goal_today(conn, project_id: int, user_id: int, goal_text: str)
     row = cur.fetchone()
     cur.close()
     return row
+
 
 def get_user_by_email(conn, email: str):
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -222,7 +225,10 @@ def verify_user_password(conn, email: str, password: str) -> dict | None:
         return None
     return user
 
-def create_refresh_token(conn, user_id: int, ttl_seconds: int = 60 * 60 * 24 * 30) -> dict:
+
+def create_refresh_token(
+    conn, user_id: int, ttl_seconds: int = 60 * 60 * 24 * 30
+) -> dict:
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(seconds=ttl_seconds)
 
@@ -257,6 +263,7 @@ def get_valid_refresh_token(conn, token: str) -> dict | None:
     row = cur.fetchone()
     cur.close()
     return row
+
 
 def use_refresh_token(conn, token: str):
     """
@@ -313,6 +320,7 @@ def use_refresh_token(conn, token: str):
         "expires_at": new_expires_at.isoformat(),
     }
 
+
 def revoke_refresh_token(conn, user_id: int, token: str) -> bool:
     cur = conn.cursor()
     cur.execute(
@@ -346,6 +354,7 @@ def revoke_refresh_token_by_token(conn, token: str) -> bool:
     revoked = cur.fetchone() is not None
     cur.close()
     return revoked
+
 
 def create_access_token(conn, user_id: int, ttl_seconds: int) -> dict:
     access_token_value = secrets.token_urlsafe(32)

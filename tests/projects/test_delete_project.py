@@ -1,12 +1,16 @@
 import pytest
 
+
 @pytest.fixture
 def auth_headers(authenticated_user):
     return {"Authorization": f"Bearer {authenticated_user['access_token']}"}
 
+
 @pytest.fixture
 def created_project(client, auth_headers):
-    res = client.post("/projects", headers=auth_headers, json={"name": "Del", "description": ""})
+    res = client.post(
+        "/projects", headers=auth_headers, json={"name": "Del", "description": ""}
+    )
     assert res.status_code == 201
     return res.get_json()
 

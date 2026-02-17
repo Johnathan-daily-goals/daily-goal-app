@@ -21,5 +21,5 @@ class Database:
             dbname=self.dbname,
             user=self.user,
             password=self.password,
-            cursor_factory=RealDictCursor
+            cursor_factory=RealDictCursor,
         )
