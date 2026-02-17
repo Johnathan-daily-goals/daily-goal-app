@@ -1,12 +1,16 @@
 import pytest
 
+
 @pytest.fixture
 def auth_headers(authenticated_user):
     return {"Authorization": f"Bearer {authenticated_user['access_token']}"}
 
+
 @pytest.fixture
 def archived_project(client, auth_headers):
-    created = client.post("/projects", headers=auth_headers, json={"name": "R", "description": ""})
+    created = client.post(
+        "/projects", headers=auth_headers, json={"name": "R", "description": ""}
+    )
     assert created.status_code == 201
     project_id = created.get_json()["id"]
 
@@ -23,7 +27,9 @@ def test_restore_project_success(client, auth_headers, archived_project):
 
 
 def test_restore_project_not_archived_conflict(client, auth_headers):
-    created = client.post("/projects", headers=auth_headers, json={"name": "N", "description": ""})
+    created = client.post(
+        "/projects", headers=auth_headers, json={"name": "N", "description": ""}
+    )
     project_id = created.get_json()["id"]
 
     res = client.post(f"/projects/{project_id}/restore", headers=auth_headers)

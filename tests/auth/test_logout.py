@@ -25,7 +25,9 @@ def test_logout_missing_refresh_token(client, authenticated_user):
     assert res.get_json()["error"] == "refresh_token required"
 
 
-def test_logout_does_not_fail_if_refresh_token_already_revoked(client, authenticated_user):
+def test_logout_does_not_fail_if_refresh_token_already_revoked(
+    client, authenticated_user
+):
     access_token = authenticated_user["access_token"]
     refresh_token = authenticated_user["refresh_token"]
 

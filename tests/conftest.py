@@ -1,4 +1,3 @@
-import os
 import pytest
 from faker import Faker
 
@@ -16,11 +15,14 @@ def client():
 def auth_headers():
     def _make(access_token: str) -> dict:
         return {"Authorization": f"Bearer {access_token}"}
+
     return _make
+
 
 @pytest.fixture
 def fake():
     return Faker()
+
 
 @pytest.fixture
 def authenticated_user(client, fake):

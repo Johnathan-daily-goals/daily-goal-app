@@ -11,13 +11,16 @@ class DailyGoalAlreadyExists(AppError):
     status_code = 409
     message = "Only one daily goal per project per day"
 
+
 class ProjectNotFound(AppError):
     status_code = 404
     message = "Project not found"
 
+
 class Unauthorized(AppError):
     status_code = 401
     message = "Unauthorized"
+
 
 class BadRequest(AppError):
     status_code = 400

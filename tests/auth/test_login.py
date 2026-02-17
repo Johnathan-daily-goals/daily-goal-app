@@ -1,5 +1,6 @@
 import pytest
 
+
 @pytest.fixture
 def registered_user(client, fake):
     email = fake.unique.email()
@@ -21,7 +22,9 @@ def test_login_success(client, registered_user):
 
 
 def test_login_wrong_password(client, registered_user):
-    res = client.post("/auth/login", json={"email": registered_user["email"], "password": "wrong"})
+    res = client.post(
+        "/auth/login", json={"email": registered_user["email"], "password": "wrong"}
+    )
     assert res.status_code == 401
     assert res.get_json()["error"] == "Invalid email or password"
 

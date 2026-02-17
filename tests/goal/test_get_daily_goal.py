@@ -1,12 +1,16 @@
 import pytest
 
+
 @pytest.fixture
 def auth_headers(authenticated_user):
     return {"Authorization": f"Bearer {authenticated_user['access_token']}"}
 
+
 @pytest.fixture
 def project_with_goal(client, auth_headers):
-    created = client.post("/projects", headers=auth_headers, json={"name": "GG", "description": ""})
+    created = client.post(
+        "/projects", headers=auth_headers, json={"name": "GG", "description": ""}
+    )
     project_id = created.get_json()["id"]
 
     goal = client.post(
