@@ -30,7 +30,22 @@ def register():
         return jsonify({"error": "Email already registered"}), 409
 
     created_user = crud.create_user(g.db_conn, email, password)
-    return jsonify(created_user), 201
+
+    access_token_row = crud.create_access_token(
+        g.db_conn,
+        created_user["id"],
+        ttl_seconds=current_app.config["ACCESS_TOKEN_TTL_SECONDS"],
+    )
+    refresh_token_row = crud.create_refresh_token(g.db_conn, created_user["id"])
+    return jsonify(
+        {
+            "id": created_user["id"],
+            "email": created_user["email"],
+            "access_token": access_token_row["token"],
+            "refresh_token": refresh_token_row["token"],
+            "expires_in": current_app.config["ACCESS_TOKEN_TTL_SECONDS"],
+        }
+    ), 201
 
 
 @blueprint.route("/login", methods=["POST"])
