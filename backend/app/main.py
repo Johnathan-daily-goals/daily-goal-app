@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, g
+from flask_cors import CORS
 from backend.app.database import Database
 from backend.app import crud
 from backend.app.errors import AppError, Unauthorized
@@ -9,6 +10,7 @@ from datetime import datetime, timezone
 
 
 app = Flask(__name__)
+CORS(app)  # Allow all origins in dev; restrict in production
 app.config["ACCESS_TOKEN_SECRET"] = os.getenv(
     "ACCESS_TOKEN_SECRET", "dev-only-change-me"
 )
@@ -204,4 +206,5 @@ def upsert_today_goal(project_id):
 
 
 if __name__ == "__main__":
-    app.run(debug=False)
+    # Port 5000 is taken by macOS AirPlay Receiver on Monterey+
+    app.run(debug=True, port=5001)
