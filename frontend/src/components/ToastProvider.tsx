@@ -1,7 +1,5 @@
 import { createContext, useContext, useState, useCallback } from 'react';
 
-// --- Types ---
-
 type ToastType = 'error' | 'success';
 
 interface Toast {
@@ -14,35 +12,20 @@ interface ToastContextValue {
   showToast: (message: string, type?: ToastType) => void;
 }
 
-// --- Context ---
-
-// createContext gives us a React "channel" that any descendant can read
-// without the value being explicitly passed down through props.
 const ToastContext = createContext<ToastContextValue>({
   showToast: () => {},
 });
 
-// --- Hook ---
-
-// This is the public API for the rest of the app:
-//   const { showToast } = useToast();
-//   showToast('Something went wrong', 'error');
 export function useToast() {
   return useContext(ToastContext);
 }
-
-// --- Provider ---
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const showToast = useCallback((message: string, type: ToastType = 'error') => {
-    // Date.now() gives a unique enough ID for our purposes
     const id = Date.now();
-
     setToasts((prev) => [...prev, { id, message, type }]);
-
-    // Auto-remove after 4 seconds
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4000);
@@ -52,8 +35,6 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={{ showToast }}>
       {children}
 
-      {/* Fixed container at the bottom-center of the viewport.
-          Lives here so it renders on top of all page content. */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 items-center pointer-events-none">
         {toasts.map((toast) => (
           <div

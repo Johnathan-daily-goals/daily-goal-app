@@ -207,4 +207,4 @@ def upsert_today_goal(project_id):
 
 if __name__ == "__main__":
     # Port 5000 is taken by macOS AirPlay Receiver on Monterey+
-    app.run(debug=True, port=5001)
+    app.run(debug=True, port=8000)
