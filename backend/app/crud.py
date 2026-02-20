@@ -373,17 +373,18 @@ def create_access_token(conn, user_id: int, ttl_seconds: int) -> dict:
     return row
 
 
-def get_valid_access_token(conn, access_token_value: str) -> dict | None:
+def slide_access_token(conn, token: str, ttl_seconds: int) -> dict | None:
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute(
         """
-        SELECT id, user_id, token, expires_at, revoked_at
-        FROM access_tokens
+        UPDATE access_tokens
+        SET expires_at = CURRENT_TIMESTAMP + (%s * INTERVAL '1 second')
         WHERE token = %s
           AND revoked_at IS NULL
-          AND expires_at > CURRENT_TIMESTAMP;
+          AND expires_at > CURRENT_TIMESTAMP
+        RETURNING id, user_id;
         """,
-        (access_token_value,),
+        (ttl_seconds, token),
     )
     row = cur.fetchone()
     cur.close()
