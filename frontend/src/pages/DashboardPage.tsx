@@ -55,7 +55,6 @@ export default function DashboardPage({ onLogout }: Props) {
   }
 
   async function handleArchive(e: React.MouseEvent, id: number) {
-    // Stop the click from bubbling up to the card's navigate handler
     e.stopPropagation();
     try {
       await archiveProject(id);
@@ -70,7 +69,7 @@ export default function DashboardPage({ onLogout }: Props) {
     try {
       await logout(refreshToken);
     } catch {
-      // Clear session even if server revocation fails
+      // ignore — clear session regardless
     }
     onLogout();
     navigate('/login');

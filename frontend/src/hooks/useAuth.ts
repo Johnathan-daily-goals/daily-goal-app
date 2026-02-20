@@ -1,10 +1,6 @@
 import { useState } from 'react';
 import type { User } from '../types';
 
-// We store tokens in localStorage so the user stays logged in on page refresh.
-// In a more security-sensitive app you'd use httpOnly cookies instead —
-// but localStorage is fine for a portfolio project and is much simpler to implement.
-
 function getStoredUser(): User | null {
   const raw = localStorage.getItem('user');
   return raw ? (JSON.parse(raw) as User) : null;

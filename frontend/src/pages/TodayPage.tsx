@@ -10,7 +10,6 @@ interface Props {
   onLogout: () => void;
 }
 
-// Each project gets paired with its goal for today (or null if none yet)
 type ProjectWithGoal = Project & { todayGoal: DailyGoal | null };
 
 export default function TodayPage({ onLogout }: Props) {
@@ -18,7 +17,6 @@ export default function TodayPage({ onLogout }: Props) {
   const [loading, setLoading] = useState(true);
   const { showToast } = useToast();
 
-  // Track which project is currently being edited and what the input text is
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editText, setEditText] = useState('');
   const [savingId, setSavingId] = useState<number | null>(null);
@@ -40,8 +38,7 @@ export default function TodayPage({ onLogout }: Props) {
     try {
       const projects = await getProjects();
 
-      // Fetch today's goal for every project in parallel.
-      // Promise.allSettled means a 404 (no goal yet) won't stop the others.
+      // allSettled so a 404 (no goal yet) doesn't abort the rest
       const goalResults = await Promise.allSettled(
         projects.map((p) => getTodaysGoal(p.id))
       );
@@ -71,7 +68,6 @@ export default function TodayPage({ onLogout }: Props) {
     try {
       const updated = await upsertTodaysGoal(projectId, editText.trim());
 
-      // Update the item in local state — no need to re-fetch everything
       setItems((prev) =>
         prev.map((item) =>
           item.id === projectId ? { ...item, todayGoal: updated } : item
@@ -90,7 +86,6 @@ export default function TodayPage({ onLogout }: Props) {
 
   function handleKeyDown(e: React.KeyboardEvent, projectId: number) {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      // Cmd+Enter or Ctrl+Enter to save — a keyboard shortcut pros love
       handleSave(projectId);
     }
     if (e.key === 'Escape') {
@@ -264,7 +259,6 @@ export default function TodayPage({ onLogout }: Props) {
                       </div>
                     </div>
                   ) : item.todayGoal ? (
-                    // Show the goal text (click to edit)
                     <p
                       onClick={() => startEditing(item)}
                       className="text-sm text-gray-700 leading-relaxed cursor-pointer hover:text-gray-900 transition-colors"
@@ -272,7 +266,6 @@ export default function TodayPage({ onLogout }: Props) {
                       {item.todayGoal.goal_text}
                     </p>
                   ) : (
-                    // No goal set yet
                     <button
                       onClick={() => startEditing(item)}
                       className="text-sm text-gray-300 hover:text-gray-500 transition-colors text-left w-full"

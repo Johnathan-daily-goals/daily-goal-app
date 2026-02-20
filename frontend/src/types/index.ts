@@ -1,14 +1,9 @@
-// These types mirror what the backend returns as JSON.
-// Keeping them in one place means if the API changes,
-// you update here and TypeScript will tell you everywhere else that breaks.
-
 export interface User {
   id: number;
   email: string;
 }
 
-// The backend returns a flat object on login/register —
-// user fields (id, email) are at the top level alongside the tokens.
+// login/register returns a flat object with user fields + tokens at the top level
 export interface AuthResponse {
   id: number;
   email: string;
@@ -32,7 +27,6 @@ export interface DailyGoal {
   created_at: string;
 }
 
-// Shape of error responses from the backend: { "error": "some message" }
 export interface ApiError {
   error: string;
 }
