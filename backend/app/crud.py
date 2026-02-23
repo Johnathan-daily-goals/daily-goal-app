@@ -206,6 +206,29 @@ def upsert_daily_goal_today(
     return row
 
 
+def get_user_by_id(conn, user_id: int):
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        "SELECT id, email, password_hash FROM users WHERE id = %s;",
+        (user_id,),
+    )
+    row = cur.fetchone()
+    cur.close()
+    return row
+
+
+def update_password(conn, user_id: int, new_password: str) -> bool:
+    password_hash = generate_password_hash(new_password)
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE users SET password_hash = %s WHERE id = %s RETURNING id;",
+        (password_hash, user_id),
+    )
+    updated = cur.fetchone() is not None
+    cur.close()
+    return updated
+
+
 def get_user_by_email(conn, email: str):
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute(

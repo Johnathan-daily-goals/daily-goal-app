@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, g, current_app
 from itsdangerous import URLSafeTimedSerializer
+from werkzeug.security import check_password_hash
 
 from backend.app import crud
 
@@ -137,3 +138,33 @@ def logout():
             "access_token_revoked": access_was_revoked,
         }
     ), 200
+
+
+@blueprint.route("/change-password", methods=["POST"])
+def change_password():
+    authorization_header = request.headers.get("Authorization", "")
+    if not authorization_header.startswith("Bearer "):
+        return jsonify({"error": "Missing or invalid Authorization header"}), 401
+
+    access_token_value = authorization_header.removeprefix("Bearer ").strip()
+    token_row = crud.slide_access_token(
+        g.db_conn,
+        access_token_value,
+        current_app.config["ACCESS_TOKEN_TTL_SECONDS"],
+    )
+    if not token_row:
+        return jsonify({"error": "Invalid or expired token"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    current_password = payload.get("current_password") or ""
+    new_password = payload.get("new_password") or ""
+
+    if not current_password or not new_password:
+        return jsonify({"error": "current_password and new_password are required"}), 400
+
+    user = crud.get_user_by_id(g.db_conn, token_row["user_id"])
+    if not user or not check_password_hash(user["password_hash"], current_password):
+        return jsonify({"error": "Current password is incorrect"}), 401
+
+    crud.update_password(g.db_conn, token_row["user_id"], new_password)
+    return jsonify({"status": "password_changed"}), 200
