@@ -77,11 +77,12 @@ export default function DashboardPage({ onLogout }: Props) {
     }
   }
 
-  async function handleRestore(e: React.MouseEvent, id: number) {
+  async function handleRestore(e: React.MouseEvent, project: Project) {
     e.stopPropagation();
     try {
-      await restoreProject(id);
-      setArchivedProjects((prev) => prev.filter((p) => p.id !== id));
+      await restoreProject(project.id);
+      setArchivedProjects((prev) => prev.filter((p) => p.id !== project.id));
+      setProjects((prev) => [{ ...project, archived_at: null }, ...prev]);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to restore project');
     }
@@ -164,15 +165,18 @@ export default function DashboardPage({ onLogout }: Props) {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-6 w-fit">
+        <div className="relative flex bg-gray-100 rounded-lg p-1 mb-6 w-fit">
+          {/* Sliding indicator */}
+          <div
+            className="absolute top-1 bottom-1 left-1 w-20 bg-white rounded-md shadow-sm pointer-events-none transition-transform duration-200 ease-in-out"
+            style={{ transform: tab === 'archived' ? 'translateX(100%)' : 'translateX(0)' }}
+          />
           {(['active', 'archived'] as const).map((t) => (
             <button
               key={t}
               onClick={() => handleTabSwitch(t)}
-              className={`text-xs font-medium px-4 py-1.5 rounded-md transition-colors capitalize ${
-                tab === t
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
+              className={`relative z-10 w-20 text-xs font-medium py-1.5 rounded-md capitalize transition-colors duration-200 ${
+                tab === t ? 'text-gray-900' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
               {t}
@@ -253,14 +257,22 @@ export default function DashboardPage({ onLogout }: Props) {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
-                <p className="text-gray-900 font-medium">No projects yet</p>
-                <p className="text-sm text-gray-400 mt-1">Create a project to start setting daily goals.</p>
-                <button
-                  onClick={() => setShowForm(true)}
-                  className="mt-5 text-sm text-indigo-600 font-medium hover:text-indigo-700"
-                >
-                  Create your first project →
-                </button>
+                <p className="text-gray-900 font-medium">No active projects</p>
+                <p className="text-sm text-gray-400 mt-1">Create a project or restore one from archived.</p>
+                <div className="flex items-center justify-center gap-4 mt-5">
+                  <button
+                    onClick={() => setShowForm(true)}
+                    className="text-sm text-indigo-600 font-medium hover:text-indigo-700"
+                  >
+                    Create a project →
+                  </button>
+                  <button
+                    onClick={() => handleTabSwitch('archived')}
+                    className="text-sm text-gray-400 font-medium hover:text-gray-600"
+                  >
+                    View archived →
+                  </button>
+                </div>
               </div>
             )}
 
@@ -347,7 +359,7 @@ export default function DashboardPage({ onLogout }: Props) {
                         )}
                       </div>
                       <button
-                        onClick={(e) => handleRestore(e, project.id)}
+                        onClick={(e) => handleRestore(e, project)}
                         className="text-xs text-gray-400 hover:text-indigo-600 font-medium transition-colors shrink-0 opacity-0 group-hover:opacity-100"
                       >
                         Restore
