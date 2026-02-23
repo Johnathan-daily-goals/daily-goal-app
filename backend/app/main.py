@@ -154,6 +154,25 @@ def get_project(project_id: int):
     return jsonify(project), 200
 
 
+@app.route("/projects/<int:project_id>", methods=["PATCH"])
+def update_project(project_id: int):
+    if not crud.project_exists(g.db_conn, project_id, g.user_id):
+        return jsonify({"error": "Project not found"}), 404
+
+    data = request.get_json()
+    name = data.get("name")
+    description = data.get("description")
+
+    if not name and description is None:
+        return jsonify({"error": "At least one of name or description is required"}), 400
+
+    project = crud.update_project(g.db_conn, project_id, g.user_id, name, description)
+    if not project:
+        return jsonify({"error": "Project not found or archived"}), 404
+
+    return jsonify(project), 200
+
+
 @app.route("/projects/<int:project_id>", methods=["DELETE"])
 def delete_project(project_id: int):
     if not crud.project_exists(g.db_conn, project_id, g.user_id):

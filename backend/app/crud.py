@@ -63,6 +63,24 @@ def project_exists(conn, project_id: int, user_id: int) -> bool:
     return exists
 
 
+def update_project(conn, project_id: int, user_id: int, name: str = None, description: str = None) -> dict | None:
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        """
+        UPDATE projects
+        SET
+            name = COALESCE(%s, name),
+            description = COALESCE(%s, description)
+        WHERE id = %s AND user_id = %s AND archived_at IS NULL
+        RETURNING id, name, description;
+        """,
+        (name, description, project_id, user_id),
+    )
+    row = cur.fetchone()
+    cur.close()
+    return row
+
+
 def archive_project(conn, project_id: int, user_id: int) -> bool:
     cur = conn.cursor()
     cur.execute(
