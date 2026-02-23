@@ -53,7 +53,11 @@ def authenticate_request():
     if not access_token_value:
         raise Unauthorized("Missing or invalid Authorization header")
 
-    token_row = crud.get_valid_access_token(g.db_conn, access_token_value)
+    token_row = crud.slide_access_token(
+        g.db_conn,
+        access_token_value,
+        app.config["ACCESS_TOKEN_TTL_SECONDS"],
+    )
     if not token_row:
         raise Unauthorized("Invalid or expired token")
 
