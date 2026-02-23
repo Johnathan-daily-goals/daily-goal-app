@@ -25,6 +25,7 @@ export default function DashboardPage({ onLogout }: Props) {
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [creating, setCreating] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState<Project | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -58,15 +59,21 @@ export default function DashboardPage({ onLogout }: Props) {
     }
   }
 
-  async function handleArchive(e: React.MouseEvent, id: number) {
+  function handleArchive(e: React.MouseEvent, project: Project) {
     e.stopPropagation();
+    setArchiveTarget(project);
+  }
+
+  async function confirmArchive() {
+    if (!archiveTarget) return;
     try {
-      await archiveProject(id);
-      setProjects((prev) => prev.filter((p) => p.id !== id));
-      // Invalidate archived cache so it reloads if user switches tabs
+      await archiveProject(archiveTarget.id);
+      setProjects((prev) => prev.filter((p) => p.id !== archiveTarget.id));
       setArchivedLoaded(false);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to archive project');
+    } finally {
+      setArchiveTarget(null);
     }
   }
 
@@ -278,7 +285,7 @@ export default function DashboardPage({ onLogout }: Props) {
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
                         <button
-                          onClick={(e) => handleArchive(e, project.id)}
+                          onClick={(e) => handleArchive(e, project)}
                           className="text-xs text-gray-300 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
                         >
                           Archive
@@ -353,6 +360,32 @@ export default function DashboardPage({ onLogout }: Props) {
           </>
         )}
       </main>
+
+      {/* Archive confirmation modal */}
+      {archiveTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
+            <h2 className="text-base font-semibold text-gray-900 mb-1">Archive project?</h2>
+            <p className="text-sm text-gray-500 mb-6">
+              <span className="font-medium text-gray-700">"{archiveTarget.name}"</span> will be moved to your archived projects.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setArchiveTarget(null)}
+                className="text-sm font-medium px-4 py-2 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmArchive}
+                className="text-sm font-medium px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors"
+              >
+                Archive
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
