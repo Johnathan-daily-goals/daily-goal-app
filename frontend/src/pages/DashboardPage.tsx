@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getProjects, createProject, archiveProject } from '../api/projects';
+import { getProjects, createProject, archiveProject, getArchivedProjects, restoreProject } from '../api/projects';
 import { logout } from '../api/auth';
 import { useToast } from '../components/ToastProvider';
 import type { Project } from '../types';
@@ -14,13 +14,18 @@ function formatDate(iso: string) {
 }
 
 export default function DashboardPage({ onLogout }: Props) {
+  const [tab, setTab] = useState<'active' | 'archived'>('active');
   const [projects, setProjects] = useState<Project[]>([]);
+  const [archivedProjects, setArchivedProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [archivedLoading, setArchivedLoading] = useState(false);
+  const [archivedLoaded, setArchivedLoaded] = useState(false);
   const { showToast } = useToast();
   const [showForm, setShowForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [creating, setCreating] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState<Project | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -54,13 +59,48 @@ export default function DashboardPage({ onLogout }: Props) {
     }
   }
 
-  async function handleArchive(e: React.MouseEvent, id: number) {
+  function handleArchive(e: React.MouseEvent, project: Project) {
     e.stopPropagation();
+    setArchiveTarget(project);
+  }
+
+  async function confirmArchive() {
+    if (!archiveTarget) return;
     try {
-      await archiveProject(id);
-      setProjects((prev) => prev.filter((p) => p.id !== id));
+      await archiveProject(archiveTarget.id);
+      setProjects((prev) => prev.filter((p) => p.id !== archiveTarget.id));
+      setArchivedLoaded(false);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to archive project');
+    } finally {
+      setArchiveTarget(null);
+    }
+  }
+
+  async function handleRestore(e: React.MouseEvent, project: Project) {
+    e.stopPropagation();
+    try {
+      await restoreProject(project.id);
+      setArchivedProjects((prev) => prev.filter((p) => p.id !== project.id));
+      setProjects((prev) => [{ ...project, archived_at: null }, ...prev]);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to restore project');
+    }
+  }
+
+  async function handleTabSwitch(next: 'active' | 'archived') {
+    setTab(next);
+    if (next === 'archived' && !archivedLoaded) {
+      setArchivedLoading(true);
+      try {
+        const data = await getArchivedProjects();
+        setArchivedProjects(data);
+        setArchivedLoaded(true);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Failed to load archived projects');
+      } finally {
+        setArchivedLoading(false);
+      }
     }
   }
 
@@ -108,21 +148,42 @@ export default function DashboardPage({ onLogout }: Props) {
       <main className="max-w-2xl mx-auto px-6 py-8">
 
         {/* Page title row */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900">Projects</h1>
-            <p className="text-xs text-gray-400 mt-0.5">{projects.length} active</p>
-          </div>
-          <button
-            onClick={() => setShowForm((v) => !v)}
-            className={`text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
-              showForm
-                ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                : 'bg-indigo-600 text-white hover:bg-indigo-700'
-            }`}
-          >
-            {showForm ? 'Cancel' : '+ New project'}
-          </button>
+        <div className="flex items-center justify-between mb-5">
+          <h1 className="text-xl font-semibold text-gray-900">Projects</h1>
+          {tab === 'active' && (
+            <button
+              onClick={() => setShowForm((v) => !v)}
+              className={`text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
+                showForm
+                  ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  : 'bg-indigo-600 text-white hover:bg-indigo-700'
+              }`}
+            >
+              {showForm ? 'Cancel' : '+ New project'}
+            </button>
+          )}
+        </div>
+
+        {/* Tabs */}
+        <div
+          className="relative flex bg-gray-100 rounded-lg p-1 mb-6 w-fit select-none"
+        >
+          {/* Sliding indicator */}
+          <div
+            className="absolute top-1 bottom-1 left-1 w-20 bg-white rounded-md shadow-sm pointer-events-none transition-transform duration-200 ease-in-out"
+            style={{ transform: tab === 'archived' ? 'translateX(100%)' : 'translateX(0)' }}
+          />
+          {(['active', 'archived'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => handleTabSwitch(t)}
+              className={`relative z-10 w-20 text-xs font-medium py-1.5 rounded-md capitalize transition-colors duration-200 ${
+                tab === t ? 'text-gray-900' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {t}
+            </button>
+          ))}
         </div>
 
         {/* New project form */}
@@ -175,78 +236,170 @@ export default function DashboardPage({ onLogout }: Props) {
           </form>
         )}
 
-        {/* Loading skeleton */}
-        {loading && (
-          <div className="space-y-3">
-            {[1, 2, 3].map((n) => (
-              <div key={n} className="bg-white border border-gray-100 rounded-2xl p-5 animate-pulse">
-                <div className="h-4 bg-gray-100 rounded w-1/3 mb-2" />
-                <div className="h-3 bg-gray-100 rounded w-1/2" />
+        {/* Active tab */}
+        {tab === 'active' && (
+          <>
+            {/* Loading skeleton */}
+            {loading && (
+              <div className="space-y-3">
+                {[1, 2, 3].map((n) => (
+                  <div key={n} className="bg-white border border-gray-100 rounded-2xl p-5 animate-pulse">
+                    <div className="h-4 bg-gray-100 rounded w-1/3 mb-2" />
+                    <div className="h-3 bg-gray-100 rounded w-1/2" />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
+            )}
 
-        {/* Empty state */}
-        {!loading && projects.length === 0 && (
-          <div className="text-center py-20">
-            <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <svg className="w-7 h-7 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <p className="text-gray-900 font-medium">No projects yet</p>
-            <p className="text-sm text-gray-400 mt-1">Create a project to start setting daily goals.</p>
-            <button
-              onClick={() => setShowForm(true)}
-              className="mt-5 text-sm text-indigo-600 font-medium hover:text-indigo-700"
-            >
-              Create your first project →
-            </button>
-          </div>
-        )}
-
-        {/* Project list */}
-        {!loading && projects.length > 0 && (
-          <ul className="space-y-2.5">
-            {projects.map((project) => (
-              <li key={project.id}>
-                <div
-                  onClick={() => navigate(`/projects/${project.id}`)}
-                  className="group bg-white border border-gray-200 rounded-2xl p-5 flex items-center gap-4 cursor-pointer hover:border-indigo-200 hover:shadow-sm transition-all"
-                >
-                  {/* Color dot */}
-                  <div className="w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
-
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900 truncate">{project.name}</p>
-                    {project.description && (
-                      <p className="text-sm text-gray-400 truncate mt-0.5">{project.description}</p>
-                    )}
-                    {project.created_at && (
-                      <p className="text-xs text-gray-300 mt-1">Created {formatDate(project.created_at)}</p>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-3 shrink-0">
-                    <button
-                      onClick={(e) => handleArchive(e, project.id)}
-                      className="text-xs text-gray-300 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
-                    >
-                      Archive
-                    </button>
-                    <svg className="w-4 h-4 text-gray-300 group-hover:text-indigo-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                    </svg>
-                  </div>
+            {/* Empty state */}
+            {!loading && projects.length === 0 && (
+              <div className="text-center py-20">
+                <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-7 h-7 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
                 </div>
-              </li>
-            ))}
-          </ul>
+                <p className="text-gray-900 font-medium">No active projects</p>
+                <p className="text-sm text-gray-400 mt-1">Create a project or restore one from archived.</p>
+                <div className="flex items-center justify-center gap-4 mt-5">
+                  <button
+                    onClick={() => setShowForm(true)}
+                    className="text-sm text-indigo-600 font-medium hover:text-indigo-700"
+                  >
+                    Create a project →
+                  </button>
+                  <button
+                    onClick={() => handleTabSwitch('archived')}
+                    className="text-sm text-gray-400 font-medium hover:text-gray-600"
+                  >
+                    View archived →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Project list */}
+            {!loading && projects.length > 0 && (
+              <ul className="space-y-2.5">
+                {projects.map((project) => (
+                  <li key={project.id}>
+                    <div
+                      onClick={() => navigate(`/projects/${project.id}`)}
+                      className="group bg-white border border-gray-200 rounded-2xl p-5 flex items-center gap-4 cursor-pointer hover:border-indigo-200 hover:shadow-sm transition-all"
+                    >
+                      <div className="w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900 truncate">{project.name}</p>
+                        {project.description && (
+                          <p className="text-sm text-gray-400 truncate mt-0.5">{project.description}</p>
+                        )}
+                        {project.created_at && (
+                          <p className="text-xs text-gray-300 mt-1">Created {formatDate(project.created_at)}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <button
+                          onClick={(e) => handleArchive(e, project)}
+                          className="text-xs text-gray-300 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                        >
+                          Archive
+                        </button>
+                        <svg className="w-4 h-4 text-gray-300 group-hover:text-indigo-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                        </svg>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+
+        {/* Archived tab */}
+        {tab === 'archived' && (
+          <>
+            {/* Loading skeleton */}
+            {archivedLoading && (
+              <div className="space-y-3">
+                {[1, 2].map((n) => (
+                  <div key={n} className="bg-white border border-gray-100 rounded-2xl p-5 animate-pulse">
+                    <div className="h-4 bg-gray-100 rounded w-1/3 mb-2" />
+                    <div className="h-3 bg-gray-100 rounded w-1/2" />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Empty state */}
+            {!archivedLoading && archivedProjects.length === 0 && (
+              <div className="text-center py-20">
+                <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-7 h-7 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+                  </svg>
+                </div>
+                <p className="text-gray-900 font-medium">No archived projects</p>
+                <p className="text-sm text-gray-400 mt-1">Archived projects will appear here.</p>
+              </div>
+            )}
+
+            {/* Archived project list */}
+            {!archivedLoading && archivedProjects.length > 0 && (
+              <ul className="space-y-2.5">
+                {archivedProjects.map((project) => (
+                  <li key={project.id}>
+                    <div className="group bg-white border border-gray-200 rounded-2xl p-5 flex items-center gap-4">
+                      <div className="w-2 h-2 rounded-full bg-gray-300 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-500 truncate">{project.name}</p>
+                        {project.description && (
+                          <p className="text-sm text-gray-400 truncate mt-0.5">{project.description}</p>
+                        )}
+                        {project.archived_at && (
+                          <p className="text-xs text-gray-300 mt-1">Archived {formatDate(project.archived_at)}</p>
+                        )}
+                      </div>
+                      <button
+                        onClick={(e) => handleRestore(e, project)}
+                        className="text-xs text-gray-400 hover:text-indigo-600 font-medium transition-colors shrink-0 opacity-0 group-hover:opacity-100"
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </main>
+
+      {/* Archive confirmation modal */}
+      {archiveTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
+            <h2 className="text-base font-semibold text-gray-900 mb-1">Archive project?</h2>
+            <p className="text-sm text-gray-500 mb-6">
+              <span className="font-medium text-gray-700">"{archiveTarget.name}"</span> will be moved to your archived projects.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setArchiveTarget(null)}
+                className="text-sm font-medium px-4 py-2 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmArchive}
+                className="text-sm font-medium px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors"
+              >
+                Archive
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
