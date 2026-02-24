@@ -165,7 +165,9 @@ export default function DashboardPage({ onLogout }: Props) {
         </div>
 
         {/* Tabs */}
-        <div className="relative flex bg-gray-100 rounded-lg p-1 mb-6 w-fit">
+        <div
+          className="relative flex bg-gray-100 rounded-lg p-1 mb-6 w-fit select-none"
+        >
           {/* Sliding indicator */}
           <div
             className="absolute top-1 bottom-1 left-1 w-20 bg-white rounded-md shadow-sm pointer-events-none transition-transform duration-200 ease-in-out"
